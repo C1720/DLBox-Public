@@ -152,6 +152,7 @@ sh build.sh P6-fix2
 | `WITH_BT` | `0` | 把 P4 冻结的自研 BT 引擎也编进去（存档用） |
 | `JOBS` | `4` | ObjC 并行编译数 |
 | `SDK` / `CLANG` / `LD` | 见上表 | 工具链路径 |
+| `SDK_VERSION` | `16.5` | 链接时的 platform version，要和 `$SDK` 指向的 SDK 版本一致 |
 | `LT_ROOT` / `BOOST_ROOT` | 见上表 | 依赖路径 |
 
 ```sh

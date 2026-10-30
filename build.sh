@@ -18,6 +18,7 @@ SDK=${SDK:-$HOME/theos/sdks/iPhoneOS16.5.sdk}
 CLANG=${CLANG:-clang}
 LD=${LD:-ld64.lld}
 MIN=14.0
+SDK_VERSION=${SDK_VERSION:-16.5}   # 跟 $SDK 指向的 SDK 版本一致，换 SDK 时不用改脚本
 NAME=DLBox
 VER=${VER:-0.5.2}
 STAGE="${1:-P5}"
@@ -124,7 +125,7 @@ if [ "$STEP" = "3" ] || [ "$STEP" = "all" ]; then
         echo "!! build/obj 里没有目标文件，先跑步骤 1 / 2"
         exit 1
     fi
-    "$LD" -arch arm64 -platform_version ios $MIN 16.5 -syslibroot "$SDK" \
+    "$LD" -arch arm64 -platform_version ios $MIN $SDK_VERSION -syslibroot "$SDK" \
         -e _main -o "$APP/$NAME" \
         "$SDK/usr/lib/libSystem.B.tbd" \
         -F"$SDK/System/Library/Frameworks" \

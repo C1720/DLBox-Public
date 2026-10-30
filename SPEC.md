@@ -8,7 +8,7 @@
 
 - 引擎：arm64 iOS，最低 iOS 14.0
 - SDK：`$SDK`（iPhoneOS16.5，含 libSystem.B.tbd / UIKit / Foundation / CommonCrypto）
-- 编译器：`$CLANG`（clang-19 或更新）
+- 编译器：`$CLANG`（clang 15 或更新）
 - 链接器：`$LD`（ld64.lld）
 - 语言：Objective-C + C，`-fobjc-arc -fblocks`
 
@@ -33,7 +33,7 @@ $LD -arch arm64 -platform_version ios 14.0 16.5 -syslibroot $SDK \
 要点：
 - 入口是 `-e _main`，必须有 `main()`（不能靠 `@main` 或 runtime 自动入口）
 - `libSystem.B.tbd` 必须显式列出
-- 构建过程不需要符号链接；`/tmp` 在部分环境下为 noexec，交叉编译产物只在真机运行
+- 构建过程不需要符号链接；交叉编译产物只能在真机上运行
 - IPA 打包：`zip -rq X.ipa Payload`，目录结构 `Payload/DLBox.app/`
 - **Info.plist 必须含 `UILaunchScreen`（空字典即可）**：否则 iOS 会把 App 当老式应用以兼容模式（letterbox）运行，全面屏设备上下留黑边、分辨率锁旧机型尺寸
 
@@ -187,7 +187,7 @@ $IPA_DIR/                         构建产物（默认 仓库下 out/）
 - `P3-fix1`：修复单文件写盘路径 bug（原把文件路径拼成目录导致 open 失败）+ 失败错误信息乱码（`%s` → UTF-8）。
 - `P3-fix2`：支持 https tracker —— Debian 官方 tracker（http）已停摆返回 0 peer，现代 tracker 基本都是 https；引擎新增外部 announce 回调，ObjC 层用 `NSURLSession` 请求（http/https 通吃），解析复用 C 侧。
 - `P3-fix3`：修复 0 字节下载 —— 部分 tracker（如 torrent.ubuntu.com）只返回极少数 IPv4 peer，且该 peer 不发 bitfield；原逻辑「收到 bitfield 才发 request」导致永不请求，改为**无 bitfield 时乐观请求**（有超时兜底）。
-- 本地已用 Python 参考实现对比验证 bencode / torrent / info hash / 跨文件写盘 / tracker 响应解析，结果一致；网络部分（tracker / peer wire）沙箱无网卡，只能真机验证。
+- 本地已用 Python 参考实现对比验证 bencode / torrent / info hash / 跨文件写盘 / tracker 响应解析，结果一致；网络部分（tracker / peer wire）只能在真机验证。
 
 已知局限（P3 阶段，均已由 P4 解决）：
 
@@ -323,7 +323,7 @@ $IPA_DIR/                         构建产物（默认 仓库下 out/）
 ```sh
 sh build.sh P5        # 全流程：编 C → 编 ObjC → 链接 → 打包
 sh build.sh P5 1      # 只编 C（快，先跑，失败得早）
-sh build.sh P5 2      # 只编 ObjC（并发 4，17 个文件约 2 分 45 秒）
+sh build.sh P5 2      # 只编 ObjC（并发 4）
 sh build.sh P5 3      # 只链接
 sh build.sh P5 4      # 只写 plist + 打包
 WITH_BT=1 sh build.sh P5   # 把冻结的 BT 引擎也编进去
@@ -368,7 +368,7 @@ WITH_BT=1 sh build.sh P5   # 把冻结的 BT 引擎也编进去
 
 ### 风险
 
-- 沙箱无网卡，**抓取逻辑无法本地联调**，只能用本地造的 HTML 样本验证解析（把样本写进单元测试式的自检入口），真机再验网络。
+- 交叉编译环境没有真实网络栈，**抓取逻辑无法本地联调**，只能用本地构造的 HTML 样本验证解析（把样本写进单元测试式的自检入口），真机再验网络。
 - 很多资源站靠 JS 渲染 / Cloudflare 校验，静态 HTML 抓不到——这是 v1 的已知边界，不承诺。
 
 ### 已确认（2026-10-24，作者选择）
@@ -398,7 +398,7 @@ WITH_BT=1 sh build.sh P5   # 把冻结的 BT 引擎也编进去
 改动：
 
 - `AppDelegate`：Tab 变成「下载 / 抓取 / 设置」（WITH_BT=1 时末尾多一个「BT」）。
-- `build.sh`：链接加 `-framework WebKit` 与 Cryptexes 框架搜索路径；**C 编译提到 ObjC 前面**；ObjC 编译改并发（`JOBS`，默认 4，17 个文件从 4 分 19 秒降到 2 分 45 秒）；`WITH_BT` 开关。
+- `build.sh`：链接加 `-framework WebKit` 与 Cryptexes 框架搜索路径；**C 编译提到 ObjC 前面**；ObjC 编译改并发（`JOBS`，默认 4）；`WITH_BT` 开关。
 - `res/Info.plist`：版本 `0.4.0`。
 
 实现要点：
@@ -425,19 +425,19 @@ WITH_BT=1 sh build.sh P5   # 把冻结的 BT 引擎也编进去
 4. `WKWebView` 兜底只等 `didFinish`，对无限滚动/懒加载页面只能拿到首屏。
 5. 不做登录态、不做验证码、不做 Cloudflare 绕过。
 
-## 环境限制备忘
+## 构建环境说明
 
-- Kelivo 内嵌 Alpine（iSH 引擎），仅回环、无网卡，**无法本地验证网络/协议**，只能盲写 + 真机试
-- 真机验证一轮 = 打包 → 用户签名 → 装机 → 试，慢；每期交付一个可装 IPA
-
+- 交叉编译只需要 clang + ld64.lld + iPhoneOS SDK，不需要 Xcode 工程
+- 产物无法在构建机上运行，网络与协议行为只能装机验证
+- 装机验证一轮 = 打包 → 签名 → 安装 → 实测，节奏慢，所以每期都交付一个可安装的 IPA
 
 ## P6 说明：libtorrent 内核移植（2026-10-29 起）
 
 **目标**：把 iTorrent 用的 BT 内核（libtorrent 2.0.11）移植进 DLBox，替换 P4 冻结的自研引擎。协议栈交给 libtorrent，DLBox 只写封装和 UI。
 
-### 云端编译（手机不编 C++）
+### 云端编译（不在本地编 C++）
 
-libtorrent 166 个 C++ 文件在手机上编要 1.5 小时以上，改到 GitHub Actions 的 macOS runner 上编：
+libtorrent 166 个 C++ 文件在本地编要一个多小时，改到 GitHub Actions 的 macOS runner 上编：
 
 - 仓库：`github.com/C1720/dlbox-ltbuild`（public，Actions 免费）
 - workflow：`.github/workflows/build.yml`（由 作者手动点 Run workflow 触发）
@@ -481,7 +481,7 @@ libtorrent 166 个 C++ 文件在手机上编要 1.5 小时以上，改到 GitHub
 
 ## P6.1 修复：抓取页「根本用不了」（2026-10-29）
 
-作者装了 P6 后实测抓取功能完全不可用（"根本就用不了"）。自查代码 + 沙箱复现，根因三处：
+作者装了 P6 后实测抓取功能完全不可用（"根本就用不了"）。自查代码 + 本地复现，根因三处：
 
 1. **`NSURLSessionDataTask` 忘写 `resume`（致命）**
    `DLCrawler.m` 里 `[[NSURLSession sharedSession] dataTaskWithRequest:...]` 的返回值被直接丢弃。`dataTask` 创建后处于 suspended，不调用 `resume` 请求永远不会发出，completion 永不回调 —— 界面永远停在「抓取中…」、右上角按钮永久置灰。这就是点「开始抓取」毫无反应的原因。
@@ -500,7 +500,7 @@ libtorrent 166 个 C++ 文件在手机上编要 1.5 小时以上，改到 GitHub
 - `DLWebRenderer` 取宿主的 window 改为遍历非隐藏 window，避免 `windows.firstObject` 落到系统 window 上导致渲染不出内容。
 - `build.sh` 写版本号改为按 `CFBundleShortVersionString` / `CFBundleVersion` 的键位替换（原来靠 `<string>0.5.0</string>` 字面量匹配，改版本号后会静默失效，导致 IPA 里版本没变）。
 
-### 沙箱复现结果（Python 复刻 parseHTML 同一套规则，打真实页面）
+### 本地复现结果（Python 复刻 parseHTML 同一套规则，打真实页面）
 
 | 页面 | 结果 |
 |---|---|

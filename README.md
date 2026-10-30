@@ -124,7 +124,7 @@ tar xzf /tmp/lt.tar.gz -C "$DEPS"    # 得到 include/ lib/ VERSION.txt
 ```sh
 sh build.sh P6-fix2          # 全流程：C → ObjC → 链接 → 打包
 sh build.sh P6-fix2 1        # 只编 C（BT 引擎已冻结，几乎秒过）
-sh build.sh P6-fix2 2        # 只编 ObjC（约 2 分 45 秒，并发 4）
+sh build.sh P6-fix2 2        # 只编 ObjC（并发 4，耗时视机器而定）
 sh build.sh P6-fix2 3        # 只链接
 sh build.sh P6-fix2 4        # 只写版本号 + 打包
 ```

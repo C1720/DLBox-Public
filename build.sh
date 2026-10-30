@@ -14,9 +14,9 @@
 set -e
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
-SDK=${SDK:-/workspace/iPhoneOS16.5.sdk}
-CLANG=${CLANG:-/usr/lib/llvm19/bin/clang}
-LD=${LD:-/usr/bin/ld64.lld}
+SDK=${SDK:-$HOME/theos/sdks/iPhoneOS16.5.sdk}
+CLANG=${CLANG:-clang}
+LD=${LD:-ld64.lld}
 MIN=14.0
 NAME=DLBox
 VER=${VER:-0.5.2}
@@ -24,8 +24,8 @@ STAGE="${1:-P5}"
 STEP="${2:-all}"
 WITH_BT="${WITH_BT:-0}"
 WITH_LT="${WITH_LT:-1}"
-LT_ROOT="${LT_ROOT:-/workspace/btport/prebuilt}"
-BOOST_ROOT="${BOOST_ROOT:-/workspace/btport/boost_1_86_0}"
+LT_ROOT="${LT_ROOT:-$HOME/dlbox-deps/prebuilt}"
+BOOST_ROOT="${BOOST_ROOT:-$HOME/dlbox-deps/boost}"
 JOBS="${JOBS:-4}"
 
 BUILD="$ROOT/build"
@@ -146,7 +146,7 @@ if [ "$STEP" = "4" ] || [ "$STEP" = "all" ]; then
     sed -i "/<key>CFBundleVersion<\/key>/{n;s|<string>.*</string>|<string>$STAGE</string>|;}" "$APP/Info.plist"
 
     echo "==> 打包 IPA"
-    IPA_DIR="${IPA_DIR:-/workspace/ipa}"
+    IPA_DIR="${IPA_DIR:-$ROOT/out}"
     mkdir -p "$IPA_DIR"
     OUT="$IPA_DIR/$NAME-$STAGE.ipa"
     cd "$BUILD"

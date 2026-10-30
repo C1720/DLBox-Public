@@ -7,17 +7,17 @@
 无 Xcode、纯命令行交叉编译的 iOS 下载 App，产出未签名 IPA，用户自行签名安装。
 
 - 引擎：arm64 iOS，最低 iOS 14.0
-- SDK：`/workspace/iPhoneOS16.5.sdk`（iPhoneOS16.5，含 libSystem.B.tbd / UIKit / Foundation / CommonCrypto）
-- 编译器：`/usr/lib/llvm19/bin/clang`（clang-19）
-- 链接器：`/usr/bin/ld64.lld`
+- SDK：`$SDK`（iPhoneOS16.5，含 libSystem.B.tbd / UIKit / Foundation / CommonCrypto）
+- 编译器：`$CLANG`（clang-19 或更新）
+- 链接器：`$LD`（ld64.lld）
 - 语言：Objective-C + C，`-fobjc-arc -fblocks`
 
 ## 构建链路（已实测通过）
 
 ```sh
-SDK=/workspace/iPhoneOS16.5.sdk
-CLANG=/usr/lib/llvm19/bin/clang
-LD=/usr/bin/ld64.lld
+SDK="$HOME/theos/sdks/iPhoneOS16.5.sdk"
+CLANG=clang
+LD=ld64.lld
 
 # 编译
 $CLANG -target arm64-apple-ios14.0 -isysroot $SDK -fobjc-arc -O1 -c src.m -o obj.o
@@ -33,7 +33,7 @@ $LD -arch arm64 -platform_version ios 14.0 16.5 -syslibroot $SDK \
 要点：
 - 入口是 `-e _main`，必须有 `main()`（不能靠 `@main` 或 runtime 自动入口）
 - `libSystem.B.tbd` 必须显式列出
-- 沙箱不能建符号链接、`/workspace` 与 `/tmp` 为 noexec，iOS 可执行文件只在真机运行，不在此处执行
+- 构建过程不需要符号链接；`/tmp` 在部分环境下为 noexec，交叉编译产物只在真机运行
 - IPA 打包：`zip -rq X.ipa Payload`，目录结构 `Payload/DLBox.app/`
 - **Info.plist 必须含 `UILaunchScreen`（空字典即可）**：否则 iOS 会把 App 当老式应用以兼容模式（letterbox）运行，全面屏设备上下留黑边、分辨率锁旧机型尺寸
 
@@ -63,7 +63,7 @@ $LD -arch arm64 -platform_version ios 14.0 16.5 -syslibroot $SDK \
 ## 目录约定
 
 ```
-/workspace/dlbox/
+DLBox/                 仓库根（clone 下来的目录）
 ├── SPEC.md         本文件
 ├── README.md
 ├── build.sh        一键编译打包（1=C 2=ObjC 3=链接 4=打包）
@@ -73,12 +73,11 @@ $LD -arch arm64 -platform_version ios 14.0 16.5 -syslibroot $SDK \
 ├── tools/          GitHub Actions workflow（libtorrent 云端编译）
 └── build/          Payload/ 与产物（每次全量重建）
 
-仓库外的依赖（换机器要先备齐）：
-/workspace/ipa/                    历史 IPA 归档（P1–P6.x，不删除、不覆盖）
-/workspace/btport/prebuilt/        libtorrent 2.0.11 + OpenSSL 3.0.15 预编译库
-/workspace/btport/boost_1_86_0/    Boost 头文件
-/workspace/iPhoneOS16.5.sdk        iOS SDK（theos/sdks）
-/workspace/trackers/               tracker 列表、测试用磁力链接
+仓库外的依赖（换机器先备齐，路径都可用环境变量覆盖）：
+$LT_ROOT/                         libtorrent 2.0.11 + OpenSSL 3.0.15（默认 $HOME/dlbox-deps/prebuilt）
+$BOOST_ROOT/                      Boost 头文件（默认 $HOME/dlbox-deps/boost）
+$SDK                              iOS SDK（默认 $HOME/theos/sdks/iPhoneOS16.5.sdk）
+$IPA_DIR/                         构建产物（默认 仓库下 out/）
 ```
 
 ## P1 落地说明（2026-10-22）
@@ -308,7 +307,7 @@ $LD -arch arm64 -platform_version ios 14.0 16.5 -syslibroot $SDK \
 - `P4-fix1` 到 `P4-fix13`，十三轮返工。最后一版（`0.3.0 (P4-fix13)`）仍未达到 作者的验收线：稳定 >1 MB/s、不卡顿 1–2 秒、速度不虚标。实测 Debian 种子真实净速约 0.5 MB/s，Ubuntu 更差。
 - 每轮验证都要「打包 → 作者签名 → 装机 → 试 → 贴日志」，反馈周期以小时计，问题又是长尾的协议/网络质量问题（假做种、IPv6 限流、tracker 池子小），越修越像在给 libtorrent 补历史课。
 - 这一期的验证成本是全程最高的，性价比明显偏低。
-- **替代方案已落地**：改用现成开源客户端 **iTorrent**（[XITRIX/iTorrent](https://github.com/XITRIX/iTorrent)，内核就是 libtorrent）。官方 Release 直接提供未加密 IPA（`cryptid = 0`，arm64，iOS 16+，含简体中文，magnet / DHT / PEX / 做种 / 后台下载 / 顺序下载齐全），已下到 `/workspace/ipa/iTorrent-2.2.0.ipa`（另有 `iTorrent-2.1.1.ipa` 备用），作者自行重签安装。BT 这块以后归 iTorrent，不再归 DLBox。
+- **替代方案已落地**：改用现成开源客户端 **iTorrent**（[XITRIX/iTorrent](https://github.com/XITRIX/iTorrent)，内核就是 libtorrent）。官方 Release 直接提供未加密 IPA（`cryptid = 0`，arm64，iOS 16+，含简体中文，magnet / DHT / PEX / 做种 / 后台下载 / 顺序下载齐全），从官方 Release 取 `iTorrent-2.2.0.ipa`（如需要可另存 `iTorrent-2.1.1.ipa` 备用），作者自行重签安装。BT 这块以后归 iTorrent，不再归 DLBox。
 
 **仓库处置：**
 
@@ -443,7 +442,7 @@ libtorrent 166 个 C++ 文件在手机上编要 1.5 小时以上，改到 GitHub
 - 仓库：`github.com/C1720/dlbox-ltbuild`（public，Actions 免费）
 - workflow：`.github/workflows/build.yml`（由 作者手动点 Run workflow 触发）
 - 编出：`libtorrent-rasterbar.a` + `libssl.a` + `libcrypto.a` + 头文件，打包成 `libtorrent-ios-arm64.tar.gz` 发 Release（tag `lt-2.0.11`）
-- 本地解包到 `/workspace/btport/prebuilt`，`build.sh` 通过 `LT_ROOT` 引用
+- 本地解包到 `$LT_ROOT`（默认 `$HOME/dlbox-deps/prebuilt`），`build.sh` 通过 `LT_ROOT` 引用
 
 关键编译参数（对齐 iTorrent 官方）：`-DTORRENT_HAVE_MMAP=0`、`-Ddeprecated-functions=OFF`、`webtorrent=OFF`、静态库、arm64、deployment target 14.0、boost 1.86.0（仅头文件）、OpenSSL 3.0.15（`ios64-cross`）。
 
@@ -510,7 +509,7 @@ libtorrent 166 个 C++ 文件在手机上编要 1.5 小时以上，改到 GitHub
 
 ### 产物
 
-`/workspace/ipa/DLBox-P6.1.ipa`（3.5 MB，md5 `378cf66709e36b7bacb1b2dec28edcc0`），版本 `0.5.1 (P6.1)`。
+`$IPA_DIR/DLBox-P6.1.ipa`（3.5 MB，md5 `378cf66709e36b7bacb1b2dec28edcc0`），版本 `0.5.1 (P6.1)`。
 
 ### 真机验证点
 
@@ -566,7 +565,7 @@ libtorrent 166 个 C++ 文件在手机上编要 1.5 小时以上，改到 GitHub
 
 ### 8. build.sh
 
-- `BOOST_ROOT` 参数化，去掉写死的 `/workspace/btport/libtorrent-2.0.11/include`；
+- `BOOST_ROOT` 参数化，去掉写死的 libtorrent include 路径；
 - `WITH_LT=1` 但预编译库缺失时**前置报错退出**，而不是留到链接期报 undefined symbols；
 - `VER` 默认值跟到 0.5.2；
 - 删掉一处空 `case`；
@@ -581,7 +580,7 @@ libtorrent 166 个 C++ 文件在手机上编要 1.5 小时以上，改到 GitHub
 
 ### 产物
 
-`/workspace/ipa/DLBox-P6-fix2.ipa`，版本 `0.5.2 (P6-fix2)`。
+`$IPA_DIR/DLBox-P6-fix2.ipa`，版本 `0.5.2 (P6-fix2)`。
 
 ### 真机验证点
 

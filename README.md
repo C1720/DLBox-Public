@@ -93,24 +93,31 @@ BT 页右上角 `+` → 粘贴 magnet / 输入磁力链接 / 从文件导入 `.t
 
 ### 依赖
 
-| 依赖 | 位置（默认） | 说明 |
+| 依赖 | 默认位置 | 覆盖变量 |
 |---|---|---|
-| iOS SDK | `/workspace/iPhoneOS16.5.sdk` | theos/sdks 里的 iPhoneOS16.5.sdk |
-| clang | `/usr/lib/llvm19/bin/clang` | clang-19 |
-| 链接器 | `/usr/bin/ld64.lld` | LLVM lld |
-| libtorrent 静态库 | `/workspace/btport/prebuilt` | 见下方「云端编译」 |
-| Boost 头文件 | `/workspace/btport/boost_1_86_0` | 只编译时用，运行时不带 |
+| iOS SDK | `$HOME/theos/sdks/iPhoneOS16.5.sdk` | `SDK` |
+| 编译器 | `clang`（PATH 中） | `CLANG` |
+| 链接器 | `ld64.lld`（PATH 中） | `LD` |
+| libtorrent 静态库 | `$HOME/dlbox-deps/prebuilt` | `LT_ROOT` |
+| Boost 头文件 | `$HOME/dlbox-deps/boost` | `BOOST_ROOT` |
 
-环境约束：入口必须是 `-e _main`（不能靠 `@main`），`libSystem.B.tbd` 要显式链接，不能建符号链接。
+脚本不假设任何固定目录，全部可用上表的环境变量覆盖。换成你自己的路径直接传变量即可，见下方示例。
+
+工具链要点：入口必须是 `-e _main`（不能靠 `@main`），`libSystem.B.tbd` 要显式链接，构建过程不需要符号链接。
+
+如果 `clang` 或 `ld64.lld` 不在 `PATH` 里（theos 工具链常见装在别处），用 `CLANG=/path/to/clang LD=/path/to/ld64.lld` 指定。
 
 ### 取 libtorrent 静态库
 
 ```sh
-curl -L -o lt.tar.gz \
+DEPS="$HOME/dlbox-deps/prebuilt"
+mkdir -p "$DEPS"
+curl -L -o /tmp/lt.tar.gz \
   https://github.com/C1720/dlbox-ltbuild/releases/download/lt-2.0.11/libtorrent-ios-arm64.tar.gz
-mkdir -p /workspace/btport/prebuilt
-tar xzf lt.tar.gz -C /workspace/btport/prebuilt   # 得到 include/ lib/ VERSION.txt
+tar xzf /tmp/lt.tar.gz -C "$DEPS"    # 得到 include/ lib/ VERSION.txt
 ```
+
+不想用默认目录就自己放，构建时把 `LT_ROOT` 指过去就行。
 
 ### 打 IPA
 
@@ -122,7 +129,16 @@ sh build.sh P6-fix2 3        # 只链接
 sh build.sh P6-fix2 4        # 只写版本号 + 打包
 ```
 
-产物：`/workspace/ipa/DLBox-<期号>.ipa`（未签名，约 3.5 MB）。
+产物：`$IPA_DIR/DLBox-<期号>.ipa`（`IPA_DIR` 默认是仓库下的 `out/`，未签名，约 3.5 MB）。
+
+```sh
+# 依赖放在别处、产物换个目录
+SDK="$HOME/theos/sdks/iPhoneOS16.5.sdk" \
+LT_ROOT="$HOME/dlbox-deps/prebuilt" \
+BOOST_ROOT="$HOME/dlbox-deps/boost" \
+IPA_DIR="./out" \
+sh build.sh P6-fix2
+```
 
 **必须按 1 → 2 → 3 → 4 的顺序跑**，C 编译最快、出错最早暴露；打包阶段会自检 `CFBundleShortVersionString` 是否和命令行给的一致，不一致直接报错退出。
 

@@ -146,7 +146,7 @@ if [ "$STEP" = "4" ] || [ "$STEP" = "all" ]; then
     sed -i "/<key>CFBundleVersion<\/key>/{n;s|<string>.*</string>|<string>$STAGE</string>|;}" "$APP/Info.plist"
 
     echo "==> 打包 IPA"
-    IPA_DIR="/workspace/ipa"
+    IPA_DIR="${IPA_DIR:-/workspace/ipa}"
     mkdir -p "$IPA_DIR"
     OUT="$IPA_DIR/$NAME-$STAGE.ipa"
     cd "$BUILD"

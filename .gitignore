@@ -1,0 +1,5 @@
+build/
+*.ipa
+*.o
+*.log
+.DS_Store

@@ -1,0 +1,115 @@
+name: build-libtorrent-ios
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 交叉编译 libtorrent (iOS arm64) + OpenSSL
+        run: |
+          set -euo pipefail
+          LT_VER=2.0.11
+          BOOST_VER=1.86.0
+          OPENSSL_VER=3.0.15
+          NCPU=$(sysctl -n hw.ncpu)
+          ROOT=$(pwd)
+          mkdir -p work out
+          cd work
+
+          echo "==> 下载 boost $BOOST_VER"
+          curl -sSL -o boost.tar.bz2 "https://archives.boost.io/release/$BOOST_VER/source/boost_1_86_0.tar.bz2"
+          tar xjf boost.tar.bz2
+
+          echo "==> 下载 libtorrent $LT_VER"
+          curl -sSL -o lt.tar.gz "https://codeload.github.com/arvidn/libtorrent/tar.gz/refs/tags/v$LT_VER"
+          tar xzf lt.tar.gz
+
+          echo "==> 补齐 deps/try_signal（submodule 在 tarball 里是空的）"
+          curl -sSL -o ts.tar.gz "https://codeload.github.com/arvidn/try_signal/tar.gz/refs/heads/master"
+          tar xzf ts.tar.gz
+          mkdir -p libtorrent-$LT_VER/deps/try_signal
+          cp try_signal-master/*.cpp try_signal-master/*.hpp libtorrent-$LT_VER/deps/try_signal/
+
+          echo "==> 编译 OpenSSL $OPENSSL_VER (iOS arm64)"
+          curl -sSL -o openssl.tar.gz "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VER/openssl-$OPENSSL_VER.tar.gz"
+          tar xzf openssl.tar.gz
+          cd openssl-$OPENSSL_VER
+          export CROSS_TOP="$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer"
+          export CROSS_SDK=iPhoneOS.sdk
+          ./Configure ios64-cross no-shared no-tests no-async no-legacy \
+            --prefix="$ROOT/work/openssl-ios" --openssldir=/etc/ssl -mios-version-min=14.0
+          make -j"$NCPU" build_libs
+          make install_sw
+          cd ..
+
+          echo "==> 配置 libtorrent"
+          cmake -S libtorrent-$LT_VER -B lt-build -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -Ddeprecated-functions=OFF \
+            -Dwebtorrent=OFF \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_CXX_FLAGS="-DTORRENT_HAVE_MMAP=0 -DNDEBUG" \
+            -DBOOST_ROOT="$ROOT/work/boost_1_86_0" \
+            -DBoost_INCLUDE_DIR="$ROOT/work/boost_1_86_0" \
+            -DBoost_NO_SYSTEM_PATHS=ON \
+            -DOPENSSL_ROOT_DIR="$ROOT/work/openssl-ios" \
+            -DOPENSSL_INCLUDE_DIR="$ROOT/work/openssl-ios/include" \
+            -DOPENSSL_SSL_LIBRARY="$ROOT/work/openssl-ios/lib/libssl.a" \
+            -DOPENSSL_CRYPTO_LIBRARY="$ROOT/work/openssl-ios/lib/libcrypto.a" \
+            -DOPENSSL_USE_STATIC_LIBS=ON
+
+          echo "==> 编译 libtorrent"
+          set +e
+          cmake --build lt-build --config Release --parallel "$NCPU" > /tmp/ltbuild.log 2>&1
+          RC=$?
+          set -e
+          tail -20 /tmp/ltbuild.log
+          if [ $RC -ne 0 ]; then
+            echo "===== 构建失败，最后 80 行 ====="
+            tail -80 /tmp/ltbuild.log
+            exit $RC
+          fi
+
+          LIB=$(find "$ROOT/work/lt-build" -name "libtorrent-rasterbar.a" | head -1)
+          if [ -z "$LIB" ]; then echo "!! 没找到 libtorrent-rasterbar.a"; find lt-build -name "*.a"; exit 1; fi
+          echo "==> 产物: $LIB"
+          lipo -info "$LIB"
+
+          echo "==> 打包"
+          cd "$ROOT"
+          mkdir -p stage/lib stage/include
+          cp "$LIB" stage/lib/
+          cp work/openssl-ios/lib/libssl.a work/openssl-ios/lib/libcrypto.a stage/lib/
+          cp -R work/libtorrent-$LT_VER/include/libtorrent stage/include/
+          cp -R work/openssl-ios/include/openssl stage/include/
+          {
+            echo "libtorrent $LT_VER (static, iOS arm64)"
+            echo "openssl $OPENSSL_VER (static, iOS arm64)"
+            echo "flags: -DTORRENT_HAVE_MMAP=0 -DNDEBUG, deprecated-functions=OFF, webtorrent=OFF"
+            echo "deployment target: 14.0"
+            date -u
+          } > stage/VERSION.txt
+          cd stage
+          tar czf ../out/libtorrent-ios-arm64.tar.gz lib include VERSION.txt
+          cd ..
+          ls -lh out/
+
+      - name: 发布到 Release（匿名可下载）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete lt-2.0.11 --repo "${{ github.repository }}" --yes --cleanup-tag || true
+          gh release create lt-2.0.11 out/libtorrent-ios-arm64.tar.gz --repo "${{ github.repository }}" \
+            --title "libtorrent 2.0.11 + OpenSSL 3.0.15 (iOS arm64)" \
+            --notes "静态库：libtorrent-rasterbar.a / libssl.a / libcrypto.a + 头文件。iOS 14.0+，arm64，-DTORRENT_HAVE_MMAP=0。"

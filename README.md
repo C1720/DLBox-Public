@@ -257,3 +257,4 @@ SPEC.md   架构、接口、分期与踩坑记录（新会话先读这个）
 
 - BT 部分（`src/DLBTLib.*`、`src/DLBTTorrentsViewController.*`）的接口与行为参考了 [XITRIX/iTorrent](https://github.com/XITRIX/iTorrent)（GPL-3.0），内核为 libtorrent 2.0.11（BSD-3-Clause）；
 - 其余代码为原创，可自由修改分发，但需保留同等的开源许可。
+#创作者：CJT
